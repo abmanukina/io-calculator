@@ -492,6 +492,13 @@ function buildLevels() {
   });
 }
 
+function reindexDRs() {
+  const rows = document.querySelectorAll('#dr-list .dr-row');
+  rows.forEach((row, idx) => {
+    row.querySelector('.dr-label').textContent = 'ДР ' + (idx + 1);
+  });
+}
+
 function addDR(v='') {
   drIdx++;
   const row = document.createElement('div');
@@ -499,18 +506,20 @@ function addDR(v='') {
   row.id = `dr-row-${drIdx}`;
   const i = drIdx;
   row.innerHTML = `
-    <span class="dr-label">ДР ${i}</span>
-    <input type="number" min="0" max="120" value="${v}" id="dr-${i}" placeholder="0–120" oninput="recalc()">
+    <span class="dr-label">ДР ?</span>
+    <input type="number" min="0" max="120" value="${v}" id="dr-${i}" placeholder="0–120" oninput="if(parseFloat(this.value)>120)this.value=120; if(parseFloat(this.value)<0)this.value=0; recalc()">
     <span class="dr-unit">%</span>
     <button class="btn-remove" onclick="removeDR(${i})" title="Удалить">×</button>
   `;
   document.getElementById('dr-list').appendChild(row);
+  reindexDRs();
   recalc();
 }
 
 function removeDR(i) {
   const r = document.getElementById(`dr-row-${i}`);
   if(r) r.remove();
+  reindexDRs();
   recalc();
 }
 
@@ -566,20 +575,23 @@ function recalc() {
   const cL=usedT*(wL/100), cD=usedD*(wD/100);
   const io=cL+cD;
   const g=grade(io);
-  const gc=GRADE_COLORS[g];
+
+  const hasLowLevel=(c['1.0']||0)>0;
+  const displayGrade=hasLowLevel?2:g;
+  const displayGC=GRADE_COLORS[displayGrade];
 
   document.getElementById('io-value').textContent=io.toFixed(1);
   const badge=document.getElementById('grade-badge');
-  badge.textContent='Оценка '+g;
-  badge.style.background=gc.bg; badge.style.color=gc.color;
+  badge.textContent='Оценка '+displayGrade;
+  badge.style.background=displayGC.bg; badge.style.color=displayGC.color;
 
   const fill=document.getElementById('bar-fill');
   fill.style.width=Math.min(io/120*100,100).toFixed(1)+'%';
-  fill.style.background=gc.bar;
+  fill.style.background=displayGC.bar;
 
   document.getElementById('contrib-levels').textContent=cL.toFixed(1)+'%';
   document.getElementById('contrib-dr').textContent=cD.toFixed(1)+'%';
-  document.getElementById('warn-low').style.display=(c['1.0']||0)>0?'block':'none';
+  document.getElementById('warn-low').style.display=hasLowLevel?'block':'none';
 
   recalcForecast();
 }
@@ -592,24 +604,27 @@ function recalcForecast() {
   const drs=getDRs();
   const avgDR=drs.length?drs.reduce((a,b)=>a+b,0)/drs.length:null;
   const fcN=parseInt(document.getElementById('fc-count').value)||0;
-  const fcLv=parseFloat(document.getElementById('fc-level').value);
-  const fcPct=LEVEL_MAP[String(fcLv)];
+  const fcLvRaw=document.getElementById('fc-level').value;
+  const fcLvKey=Object.keys(LEVEL_MAP).find(k=>parseFloat(k)===parseFloat(fcLvRaw));
+  const fcPct=fcLvKey!==undefined?LEVEL_MAP[fcLvKey]:undefined;
   const res=document.getElementById('forecast-result');
 
-  if(fcN===0||avgT===null){res.style.display='none';return;}
+  if(fcN===0||fcPct===undefined){res.style.display='none';return;}
 
-  const newTot=tot+fcN;
-  const newAvgT=(avgT*tot+fcN*fcPct)/newTot;
   const usedD=avgDR!==null?avgDR:0;
+  const curAvgT=avgT!==null?avgT:0;
+  const newTot=tot+fcN;
+  const newAvgT=(curAvgT*tot+fcN*fcPct)/newTot;
   const newIO=newAvgT*wLf+usedD*wDf;
-  const oldIO=avgT*wLf+usedD*wDf;
+  const oldIO=curAvgT*wLf+usedD*wDf;
   const delta=newIO-oldIO;
   const ng=grade(newIO), gc=GRADE_COLORS[ng];
   const dStr=delta>=0?`<span class="up">+${delta.toFixed(1)}%</span>`:`<span class="dn">${delta.toFixed(1)}%</span>`;
+  const curIOStr=avgT!==null?`Текущая ИО: <b>${oldIO.toFixed(1)}%</b><br>` : '';
 
   res.style.display='block';
-  res.innerHTML=`Если закроешь ещё <b>${fcN} ${noun(fcN,'тему','темы','тем')}</b> на уровень <b>${fcLv}</b> (${fcPct}%):<br>
-  Новая ИО: <b>${newIO.toFixed(1)}%</b> ${dStr}
+  res.innerHTML=`Если закроешь ещё <b>${fcN} ${noun(fcN,'тему','темы','тем')}</b> на уровень <b>${fcLvKey}</b> (${fcPct}%):<br>
+  ${curIOStr}Новая ИО: <b>${newIO.toFixed(1)}%</b> ${dStr}
   &nbsp;&nbsp;→&nbsp;&nbsp; <span class="grade-tag" style="background:${gc.bg};color:${gc.color}">Оценка ${ng}</span>`;
 }
 
